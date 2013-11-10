@@ -5,6 +5,9 @@
       var curWidth = window.innerWidth;
       var curHeight = window.innerHeight;
 
+      // this is a dirty flag for rerendering
+      var imagesLoaded = false;
+
       var totalColumns = 1;
       var columnPos = [0];
       var pins = [];
@@ -36,26 +39,27 @@
         ctx.restore();
       }
 
-      function renderComment(ctx, x, y, imgpath, user, comment) {
+      function renderComment(ctx, x, y, comment) {
         ctx.save();
         ctx.translate(x,y);
 
-        // the assumption is that user images are fixed size
-        var img = new Image();
-        img.onload = function() {
-          ctx.drawImage(img, x+pinMargin,y);
-        };
-        img.src = imgpath;
+        ctx.strokeStyle = "#D0D0D0";
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(pinWidth-pinMargin*2,0);
+        ctx.stroke();
 
-        renderTextBlock(ctx, 30 , 0, user, "#707070", "8pt Arial");
-        renderTextBlock(ctx, 30 , 10, comment, "#A0A0A0", "8pt Arial");
+        ctx.drawImage(comment.img, pinMargin,pinMargin);
+
+        renderTextBlock(ctx, 30 , pinMargin, comment.username, "#707070", "8pt Arial");
+        renderTextBlock(ctx, 30 , 10+pinMargin, comment.comment, "#A0A0A0", "8pt Arial");
         ctx.restore();
       }
 
-      function renderPin(ctx, x, y, img, imgWidth, imgHeight, pin) {
+      function renderPin(ctx, x, y, pin) {
         // approximate pinHeight is image + title + meta + comments + margins
-        var pinHeight = imgHeight+pinMargin+14+pinMargin+9+pinMargin
-                    + pin.comments.length*(pinMargin+30+pinMargin);
+        var pinHeight = pin.imgHeight+pinMargin+20+pinMargin+15+pinMargin
+                    + pin.comments.length*(pinMargin+30+pinMargin)+pinMargin;
 
         var drawPosY = 0;
 
@@ -79,12 +83,12 @@
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0,0,pinWidth, pinHeight);
 
-        ctx.drawImage(img, 0, drawPosY, imgWidth, imgHeight);
-        drawPosY += pinMargin + imgHeight;
+        ctx.drawImage(pin.img, 0, drawPosY, pin.imgWidth, pin.imgHeight);
+        drawPosY += pinMargin + pin.imgHeight;
 
         renderTextBlock(ctx, 0, drawPosY, pin.title,
                         "black", "13pt TimesNewRoman");
-        drawPosY += pinMargin + 13 + pinMargin;
+        drawPosY += 13 + pinMargin;
 
         var metaText = "" + pin.repins + " repins  " + pin.likes + " likes  " + pin.comments.length + " comment";
         if(pin.comments.length != 1) {
@@ -94,11 +98,9 @@
         renderTextBlock(ctx, 0, drawPosY, metaText, "grey", "9pt Arial");
         drawPosY += pinMargin + 9;
 
-console.log("this pin has : " + pin.comments.length + " comments");
         for(var i=0; i<pin.comments.length; i++) {
-          renderComment(ctx, 0, pinMargin+drawPosY, pin.comments[i].userimg, 
-                        pin.comments[i].username, pin.comments[i].comment);
-          drawPosY += pinMargin+30;
+          renderComment(ctx, 0, pinMargin+drawPosY, pin.comments[i]);
+          drawPosY += pinMargin+30+pinMargin;
         }
 
         ctx.restore();
@@ -112,7 +114,7 @@ console.log("this pin has : " + pin.comments.length + " comments");
           var ctx = canvas.getContext('2d');
 
           // lets figure out some constants given the current window size
-          totalColumns = Math.floor(curWidth / pinWidth);
+          totalColumns = Math.floor(curWidth / (pinWidth + 2*pinMargin));
           columnPos = [];
           for(var i=0; i<totalColumns; i++) {
             columnPos.push(0);
@@ -123,30 +125,67 @@ console.log("this pin has : " + pin.comments.length + " comments");
 
           ctx.fillStyle = "#E9E9E9";
           ctx.fillRect(0,0,canvas.width,canvas.height);
+
+          var canvasMargin = Math.floor((canvas.width - 
+                               (totalColumns * pinWidth))/2);
+          ctx.save();
+          ctx.translate(canvasMargin, pinMargin);
+
+          var pinsRendered = 0;
           
           for(var i=0; i<pins.length; i++) {
             var pin = pins[i];
-            var loading = false;
-            pin.img = new Image();
 
-            pin.img.index = i;
-
-            // rendering after the primary image is loaded because it
-            // affects the size of the tile
-            pin.img.onload = function() {
-              var imgHeight = this.height;
-              var imgWidth = this.width;
-              if(this.width > pinWidth-2*pinMargin) {
-                imgWidth = pinWidth-2*pinMargin;
-                imgHeight = this.height*((pinWidth-2*pinMargin)/this.width);
+            // check if pin is ready to be rendered
+            if(typeof pin.img == 'undefined') {
+              continue;
+            }
+            var commentsResolved = 0;
+            for(var j=0; j<pin.comments.length; j++) {
+              if(typeof pin.comments[j].img != 'undefined') {
+                commentsResolved++;
               }
+            }
+            if(commentsResolved != pin.comments.length) {
+              continue;
+            }
 
-              columnPos[this.index%totalColumns] = parseInt(renderPin(ctx, 
-                    pinMargin+(this.index%totalColumns)*pinWidth, 
-                    pinMargin+columnPos[this.index%totalColumns], 
-                    this, imgWidth, imgHeight, pin));
-            };
-            pin.img.src = pin.imageurl;
+            columnPos[pinsRendered%totalColumns] = parseInt(renderPin(ctx, 
+                    (pinsRendered%totalColumns)*pinWidth, 
+                    columnPos[pinsRendered%totalColumns], 
+                    pin));
+            pinsRendered++;
+          }
+          ctx.restore();
+        }
+      }
+
+      function loadImages() {
+        for(var i=0; i<pins.length; i++) {
+	  var pin = pins[i];
+          pin.img = new Image();
+
+          // add a reference for async resp
+          pin.img.pin = pin;
+
+          pin.img.onload = function() {
+            this.pin.imgHeight = this.height;
+            this.pin.imgWidth = this.width;
+            if(this.width > pinWidth-2*pinMargin) {
+              this.pin.imgWidth = pinWidth-2*pinMargin;
+              this.pin.imgHeight = this.height*((pinWidth-2*pinMargin)/this.width);
+            }
+            imagesLoaded = true;
+          }
+          pin.img.src = pin.imageurl;
+
+          for(var j=0; j<pin.comments.length; j++) {
+            pin.comments[j].img = new Image();
+
+            pin.comments[j].img.onload = function() {
+              imagesLoaded = true;
+            }
+            pin.comments[j].img.src = pin.comments[j].userimg;
           }
         }
       }
@@ -155,16 +194,15 @@ console.log("this pin has : " + pin.comments.length + " comments");
         var xmlhttp = new XMLHttpRequest();
         xmlhttp.onreadystatechange = function() {
           if(xmlhttp.readyState == 4 && xmlhttp.status==200) {
-            console.log("GOT RESP: " + xmlhttp.responseText);
             pins = (JSON.parse(xmlhttp.responseText)).pins;
-            renderPins();
+            loadImages();
           }
         };
         xmlhttp.open("GET", "pinData.json", true);
         xmlhttp.send();
       }
 
-      function checkBounds() {
+      function checkRender(timeout) {
         setInterval(function() {
           if(curWidth !== window.innerWidth 
               || curHeight !== window.innerHeight) {
@@ -172,11 +210,15 @@ console.log("this pin has : " + pin.comments.length + " comments");
             curHeight = window.innerHeight;
             renderPins();
           }
-        });
+          if(imagesLoaded == true) {
+            imagesLoaded = false;
+            renderPins();
+          }
+        }, timeout);
       }
     </script>
   </head>
-  <body onload="init();" onresize="checkBounds();">
+  <body onload="init();checkRender(0);" onresize="checkRender(500);">
     <canvas id="pinboard">
        canvas element not supported!
     </canvas>
