@@ -7,6 +7,7 @@
 
       // this is a dirty flag for rerendering
       var imagesLoaded = false;
+      var scrolledPos = 0;
 
       var totalColumns = 1;
       var columnPos = [0];
@@ -129,7 +130,7 @@
           var canvasMargin = Math.floor((canvas.width - 
                                (totalColumns * pinWidth))/2);
           ctx.save();
-          ctx.translate(canvasMargin, pinMargin);
+          ctx.translate(canvasMargin, pinMargin+scrolledPos);
 
           var pinsRendered = 0;
           
@@ -200,6 +201,23 @@
         };
         xmlhttp.open("GET", "pinData.json", true);
         xmlhttp.send();
+
+        document.addEventListener("mousewheel", function(e) {
+          scrolledPos += e.wheelDelta;
+          if(scrolledPos > 0) {
+            scrolledPos = 0;
+          }
+          var maxHeight = 0;
+          for(var i=0; i<totalColumns; i++) {
+            if(maxHeight < columnPos[i]) {
+              maxHeight = columnPos[i];
+            }
+          }
+          if(scrolledPos < -maxHeight+curHeight-2*pinMargin) {
+            scrolledPos = -maxHeight+curHeight-2*pinMargin;
+          }
+          renderPins();
+        }, false);
       }
 
       function checkRender(timeout) {
