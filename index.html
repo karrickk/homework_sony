@@ -1,0 +1,184 @@
+<html>
+  <head>
+    <title>Pinterest Tile</title>
+    <script type="text/javascript">
+      var curWidth = window.innerWidth;
+      var curHeight = window.innerHeight;
+
+      var totalColumns = 1;
+      var columnPos = [0];
+      var pins = [];
+      var pinMargin = 7;
+      var pinWidth = 250;
+      var pinCornerRadius = 3;
+
+      function roundedPath(ctx, width, height) {
+        ctx.beginPath();
+        ctx.moveTo(pinCornerRadius,0);
+        ctx.lineTo(width-pinCornerRadius,0);
+        ctx.quadraticCurveTo(width, 0, width, pinCornerRadius);
+        ctx.lineTo(width, height-pinCornerRadius);
+        ctx.quadraticCurveTo(width, height, width-pinCornerRadius, height);
+        ctx.lineTo(pinCornerRadius, height);
+        ctx.quadraticCurveTo(0, height, 0, height-pinCornerRadius);
+        ctx.lineTo(0, pinCornerRadius);
+        ctx.quadraticCurveTo(0, 0, pinCornerRadius, 0);
+      }
+
+      function renderTextBlock(ctx, x, y, text, fill, font) {
+        ctx.save();
+
+        ctx.translate(x,y);
+        ctx.fillStyle = fill;
+        ctx.font = font;
+        ctx.fillText(text, pinMargin*2, pinMargin*2);
+        
+        ctx.restore();
+      }
+
+      function renderComment(ctx, x, y, imgpath, user, comment) {
+        ctx.save();
+        ctx.translate(x,y);
+
+        // the assumption is that user images are fixed size
+        var img = new Image();
+        img.onload = function() {
+          ctx.drawImage(img, x+pinMargin,y);
+        };
+        img.src = imgpath;
+
+        renderTextBlock(ctx, 30 , 0, user, "#707070", "8pt Arial");
+        renderTextBlock(ctx, 30 , 10, comment, "#A0A0A0", "8pt Arial");
+        ctx.restore();
+      }
+
+      function renderPin(ctx, x, y, img, imgWidth, imgHeight, pin) {
+        // approximate pinHeight is image + title + meta + comments + margins
+        var pinHeight = imgHeight+pinMargin+14+pinMargin+9+pinMargin
+                    + pin.comments.length*(pinMargin+30+pinMargin);
+
+        var drawPosY = 0;
+
+        ctx.save();
+        ctx.translate(x+pinMargin,y+pinMargin);
+
+        // shadow region
+        ctx.save();
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.shadowBlur = 2;
+        ctx.shadowColor = "#D0D0D0";
+        roundedPath(ctx, pinWidth-2*pinMargin, pinHeight-2*pinMargin);
+        ctx.fill();
+        ctx.restore();
+
+        // clip region
+        roundedPath(ctx, pinWidth-2*pinMargin, pinHeight-2*pinMargin);
+        ctx.clip();
+
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0,0,pinWidth, pinHeight);
+
+        ctx.drawImage(img, 0, drawPosY, imgWidth, imgHeight);
+        drawPosY += pinMargin + imgHeight;
+
+        renderTextBlock(ctx, 0, drawPosY, pin.title,
+                        "black", "13pt TimesNewRoman");
+        drawPosY += pinMargin + 13 + pinMargin;
+
+        var metaText = "" + pin.repins + " repins  " + pin.likes + " likes  " + pin.comments.length + " comment";
+        if(pin.comments.length != 1) {
+          metaText += "s";
+        }
+
+        renderTextBlock(ctx, 0, drawPosY, metaText, "grey", "9pt Arial");
+        drawPosY += pinMargin + 9;
+
+console.log("this pin has : " + pin.comments.length + " comments");
+        for(var i=0; i<pin.comments.length; i++) {
+          renderComment(ctx, 0, pinMargin+drawPosY, pin.comments[i].userimg, 
+                        pin.comments[i].username, pin.comments[i].comment);
+          drawPosY += pinMargin+30;
+        }
+
+        ctx.restore();
+
+        return y + pinHeight;
+      }
+
+      function renderPins() {
+        var canvas = document.getElementById('pinboard');
+        if (canvas.getContext){
+          var ctx = canvas.getContext('2d');
+
+          // lets figure out some constants given the current window size
+          totalColumns = Math.floor(curWidth / pinWidth);
+          columnPos = [];
+          for(var i=0; i<totalColumns; i++) {
+            columnPos.push(0);
+          }
+
+          canvas.width = curWidth;
+          canvas.height = curHeight;
+
+          ctx.fillStyle = "#E9E9E9";
+          ctx.fillRect(0,0,canvas.width,canvas.height);
+          
+          for(var i=0; i<pins.length; i++) {
+            var pin = pins[i];
+            var loading = false;
+            pin.img = new Image();
+
+            pin.img.index = i;
+
+            // rendering after the primary image is loaded because it
+            // affects the size of the tile
+            pin.img.onload = function() {
+              var imgHeight = this.height;
+              var imgWidth = this.width;
+              if(this.width > pinWidth-2*pinMargin) {
+                imgWidth = pinWidth-2*pinMargin;
+                imgHeight = this.height*((pinWidth-2*pinMargin)/this.width);
+              }
+
+              columnPos[this.index%totalColumns] = parseInt(renderPin(ctx, 
+                    pinMargin+(this.index%totalColumns)*pinWidth, 
+                    pinMargin+columnPos[this.index%totalColumns], 
+                    this, imgWidth, imgHeight, pin));
+            };
+            pin.img.src = pin.imageurl;
+          }
+        }
+      }
+
+      function init() {
+        var xmlhttp = new XMLHttpRequest();
+        xmlhttp.onreadystatechange = function() {
+          if(xmlhttp.readyState == 4 && xmlhttp.status==200) {
+            console.log("GOT RESP: " + xmlhttp.responseText);
+            pins = (JSON.parse(xmlhttp.responseText)).pins;
+            renderPins();
+          }
+        };
+        xmlhttp.open("GET", "pinData.json", true);
+        xmlhttp.send();
+      }
+
+      function checkBounds() {
+        setInterval(function() {
+          if(curWidth !== window.innerWidth 
+              || curHeight !== window.innerHeight) {
+            curWidth = window.innerWidth;
+            curHeight = window.innerHeight;
+            renderPins();
+          }
+        });
+      }
+    </script>
+  </head>
+  <body onload="init();" onresize="checkBounds();">
+    <canvas id="pinboard">
+       canvas element not supported!
+    </canvas>
+  </body>
+</html>
