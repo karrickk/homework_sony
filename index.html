@@ -177,6 +177,7 @@
               this.pin.imgHeight = this.height*((pinWidth-2*pinMargin)/this.width);
             }
             imagesLoaded = true;
+            checkRender();
           }
           pin.img.src = pin.imageurl;
 
@@ -185,6 +186,7 @@
 
             pin.comments[j].img.onload = function() {
               imagesLoaded = true;
+              checkRender();
             }
             pin.comments[j].img.src = pin.comments[j].userimg;
           }
@@ -221,7 +223,7 @@
       }
 
       function checkRender(timeout) {
-        setInterval(function() {
+        setTimeout(function() {
           if(curWidth !== window.innerWidth 
               || curHeight !== window.innerHeight) {
             curWidth = window.innerWidth;
@@ -236,7 +238,7 @@
       }
     </script>
   </head>
-  <body onload="init();checkRender(0);" onresize="checkRender(500);">
+  <body onload="init();" onresize="checkRender(500);">
     <canvas id="pinboard">
        canvas element not supported!
     </canvas>
